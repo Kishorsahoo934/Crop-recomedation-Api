@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+numpy
+pandas
+tensorflow
+Pillow
+google-generativeai
+wikipedia
+joblib
+scikit-learn
