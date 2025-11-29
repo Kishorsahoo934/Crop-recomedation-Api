@@ -213,7 +213,7 @@ async def chatbot(query: str = Form(...)):
 MODEL_PATH = r"model.tflite"
 CLASSES_PATH = r"class_indices.json"
 IMAGE_SIZE = (224, 224)
-API_KEY = "OPENROUTER_API_KEY"  # <-- replace with your OpenRouter key
+API_KEY = os.getenv("OPENROUTER_API_KEY") # <-- replace with your OpenRouter key
 
 # Load class indices and TFLite model
 try:
