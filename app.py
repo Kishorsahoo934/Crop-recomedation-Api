@@ -17,7 +17,7 @@ import google.generativeai as genai
 import wikipedia
 
 # ========== GLOBAL CONFIG ==========
-genai.configure(api_key="AIzaSyBffMhdDvvjSeii4vsTy93jCHcBg81iz4o")
+genai.configure(api_key="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")
 
 # System-level instruction for the chatbot and recommendation generation.
 # This prompt instructs the model to return short, point-wise answers.
@@ -197,23 +197,62 @@ async def fertilizer_recommend(
 # ======================================================
 # 4️⃣ CHATBOT ENDPOINT (RAG + GEMINI)
 # ======================================================
+
+API_KEY = "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"   # <-- replace with your key
+
+# (Optional) System Prompt
+SYSTEM_PROMPT = "You are a helpful chatbot. Give The Correct Answers Abou the Agriculture related questions. related to odisha agriculture only."
+
+async def ask_openrouter(message: str):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer " + API_KEY,
+    }
+
+    data = {
+        "model": "openai/gpt-3.5-turbo",        # you can use any model
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": message}
+        ]
+    }
+
+    # Use thread executor because requests is blocking
+    loop = asyncio.get_event_loop()
+
+    def send_request():
+        return requests.post(url, headers=headers, json=data)
+
+    response = await loop.run_in_executor(None, send_request)
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=500,
+            detail=f"OpenRouter Error: {response.text}"
+        )
+
+    result = response.json()
+    return result["choices"][0]["message"]["content"]
+
+
+# ------------------------------------------------------------------
+# ✅ FINAL WORKING CHATBOT ROUTE USING OPENROUTER
+# ------------------------------------------------------------------
 @app.post("/chatbot")
 async def chatbot(query: str = Form(...)):
-    """Gemini-based agricultural assistant."""
     try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        # Prepend the system-level instructions to ensure short, point-wise replies
-        prompt = SYSTEM_PROMPT + "\n\nUser: " + query
+        user_query = query.strip()
 
-        # Run synchronous API call in a thread pool
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: model.generate_content(prompt)
-        )
-        return {"response": response.text.strip()}
+        # Call OpenRouter API
+        reply = await ask_openrouter(user_query)
+
+        return {"response": reply}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chatbot error: {e}")
+
 
 
 # ======================================================
