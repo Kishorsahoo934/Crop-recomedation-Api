@@ -17,7 +17,7 @@ import google.generativeai as genai
 import wikipedia
 import requests
 # ========== GLOBAL CONFIG ==========
-genai.configure(api_key="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")
+API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # System-level instruction for the chatbot and recommendation generation.
 # This prompt instructs the model to return short, point-wise answers.
@@ -198,10 +198,9 @@ async def fertilizer_recommend(
 # 4️⃣ CHATBOT ENDPOINT (RAG + GEMINI)
 # ======================================================
 
-API_KEY = "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"   # <-- replace with your key
+API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # (Optional) System Prompt
-SYSTEM_PROMPT = "You are a helpful chatbot. Give The Correct Answers Abou the Agriculture related questions. related to odisha agriculture only."
 
 async def ask_openrouter(message: str):
     url = "https://openrouter.ai/api/v1/chat/completions"
