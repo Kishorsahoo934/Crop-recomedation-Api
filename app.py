@@ -90,53 +90,6 @@ async def crop_recommend(
     input_data = [[nitrogen, phosphorus, potassium, temperature, humidity, ph, rainfall]]
     prediction = crop_model.predict(input_data)
     return {"recommended_crop": prediction[0]}
-
-
-# ======================================================
-# 2️⃣ CROP STATISTICS ENDPOINT
-# ======================================================
-# DATA_PATH = r'cropdiseaseprediction_final/Crop_Recommendation_Dataset.csv'
-# SUMM_PATH = r'K:\testing\farmsathi\docs\crop_summaries.txt'
-
-# try:
-#     data = pd.read_csv(DATA_PATH)
-#     crop_summaries = {}
-#     with open(SUMM_PATH, 'r') as f:
-#         for line in f:
-#             crop, summary = line.split(': ', 1)
-#             crop_summaries[crop] = summary.strip()
-#     print("✅ Crop data and summaries loaded.")
-# except Exception as e:
-#     print(f"❌ Error loading dataset: {e}")
-#     data, crop_summaries = None, {}
-
-# @app.get("/crop-stats/{crop_name}")
-# async def crop_stats(crop_name: str):
-#     if data is None:
-#         raise HTTPException(status_code=500, detail="Dataset not available.")
-#     if crop_name not in data['Crop'].unique():
-#         raise HTTPException(status_code=404, detail="Crop not found.")
-
-#     x = data[data['Crop'] == crop_name]
-#     stats = {
-#         "Parameter": ['Nitrogen', 'Phosphorus', 'Potassium', 'Temperature', 'Humidity', 'pH_Value', 'Rainfall'],
-#         "Minimum": [
-#             x['Nitrogen'].min(), x['Phosphorus'].min(), x['Potassium'].min(),
-#             x['Temperature'].min(), x['Humidity'].min(), x['pH_Value'].min(), x['Rainfall'].min()
-#         ],
-#         "Average": [
-#             x['Nitrogen'].mean(), x['Phosphorus'].mean(), x['Potassium'].mean(),
-#             x['Temperature'].mean(), x['Humidity'].mean(), x['pH_Value'].mean(), x['Rainfall'].mean()
-#         ],
-#         "Maximum": [
-#             x['Nitrogen'].max(), x['Phosphorus'].max(), x['Potassium'].max(),
-#             x['Temperature'].max(), x['Humidity'].max(), x['pH_Value'].max(), x['Rainfall'].max()
-#         ]
-#     }
-#     summary = crop_summaries.get(crop_name, "No summary available for this crop.")
-#     return {"statistics": stats, "summary": summary}
-
-
 # # ======================================================
 # # 3️⃣ FERTILIZER RECOMMENDATION ENDPOINT
 # ======================================================
@@ -260,10 +213,9 @@ async def chatbot(query: str = Form(...)):
 MODEL_PATH = r"model.tflite"
 CLASSES_PATH = r"class_indices.json"
 IMAGE_SIZE = (224, 224)
+API_KEY = "OPENROUTER_API_KEY"  # <-- replace with your OpenRouter key
 
-# Initialize Gemini model once
-disease_model = genai.GenerativeModel("models/gemini-2.5-flash")
-
+# Load class indices and TFLite model
 try:
     with open(CLASSES_PATH, "r") as f:
         class_indices = json.load(f)
@@ -276,10 +228,12 @@ except Exception as e:
     print(f"❌ Error loading disease model: {e}")
     interpreter, idx_to_class = None, None
 
+
 def preprocess_image(image: Image.Image) -> np.ndarray:
     img = image.resize(IMAGE_SIZE)
     arr = np.array(img, dtype=np.float32) / 255.0
     return np.expand_dims(arr, axis=0)
+
 
 def predict_disease(interpreter, input_array, idx_to_class):
     input_details = interpreter.get_input_details()
@@ -289,6 +243,42 @@ def predict_disease(interpreter, input_array, idx_to_class):
     preds = interpreter.get_tensor(output_details[0]["index"])[0]
     idx = int(np.argmax(preds))
     return idx_to_class.get(idx, "Unknown"), float(preds[idx]) * 100
+
+
+async def get_openrouter_recommendation(disease_name: str) -> str:
+    """
+    Call OpenRouter API to get farmer-friendly treatment recommendation
+    """
+    prompt = SYSTEM_PROMPT + f"\n\nUser: Give simple treatment steps for {disease_name} in farmer-friendly language. Use bullet points and put each step on a new line."
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_KEY}"
+    }
+    data = {
+        "model": "openai/gpt-3.5-turbo",
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ]
+    }
+
+    loop = asyncio.get_event_loop()
+
+    def send_request():
+        return requests.post(url, headers=headers, json=data)
+
+    try:
+        response = await loop.run_in_executor(None, send_request)
+        if response.status_code == 200:
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+        else:
+            return f"Could not generate recommendation (Error {response.status_code})"
+    except Exception as e:
+        return f"Could not generate recommendation: {str(e)}"
+
 
 @app.post("/predict-disease")
 async def predict_disease_api(file: UploadFile = File(...)):
@@ -310,25 +300,8 @@ async def predict_disease_api(file: UploadFile = File(...)):
         input_arr = preprocess_image(image)
         disease, conf = predict_disease(interpreter, input_arr, idx_to_class)
 
-        # Get recommendation with timeout
-        recommendation = "No recommendation available"
-        try:
-            # Run Gemini API call with timeout
-            # Prepend the system prompt so the reply is short and point-wise.
-            prompt = SYSTEM_PROMPT + f"\n\nUser: Give simple treatment steps for {disease} in farmer-friendly language. Use bullet points and put each step on a new line."
-            model = genai.GenerativeModel("gemini-2.5-flash")
-
-            # Run synchronous API call in a thread pool to not block
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: model.generate_content(prompt)
-            )
-            recommendation = response.text.strip()
-        except asyncio.TimeoutError:
-            recommendation = "Recommendation generation timed out. Please try again."
-        except Exception as e:
-            recommendation = f"Could not generate recommendation: {str(e)}"
+        # Get recommendation from OpenRouter
+        recommendation = await get_openrouter_recommendation(disease)
 
         return {
             "predicted_disease": disease,
