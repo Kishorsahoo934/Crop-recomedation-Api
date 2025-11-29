@@ -9,4 +9,5 @@ wikipedia
 joblib
 scikit-learn
 python-multipart
+requests
 
