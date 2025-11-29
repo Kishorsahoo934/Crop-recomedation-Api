@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import google.generativeai as genai
 import wikipedia
-
+import requests
 # ========== GLOBAL CONFIG ==========
 genai.configure(api_key="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")
 
