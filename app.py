@@ -67,7 +67,7 @@ app.add_middleware(
 # 1️⃣ CROP RECOMMENDATION ENDPOINT
 # ======================================================
 try:
-    with open('crop_Recommendation_random_forest.pkl', 'rb') as file:
+    with open('crop_recommendation_model.pkl', 'rb') as file:
         crop_model = pickle.load(file)
     print("✅ Crop recommendation model loaded.")
 except Exception as e:
