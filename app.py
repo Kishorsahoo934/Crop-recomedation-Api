@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 import google.generativeai as genai
 import wikipedia
 import requests
+from ultralytics import YOLO 
 # ========== GLOBAL CONFIG ==========
 API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -217,40 +218,80 @@ API_KEY = os.getenv("OPENROUTER_API_KEY") # <-- replace with your OpenRouter key
 
 # Load class indices and TFLite model
 try:
+    leaf_detector = YOLO("best.pt")     # Your downloaded YOLO model
+    print("✅ Leaf detector loaded.")
+except Exception as e:
+    print("❌ Error loading leaf detector:", e)
+    leaf_detector = None
+try:
+    # Load class indices
     with open(CLASSES_PATH, "r") as f:
         class_indices = json.load(f)
     idx_to_class = {int(v): k for k, v in class_indices.items()}
 
+    # Load TFLite model
     interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
     interpreter.allocate_tensors()
     print("✅ Disease model loaded.")
 except Exception as e:
-    print(f"❌ Error loading disease model: {e}")
+    print("❌ Error loading disease model:", e)
     interpreter, idx_to_class = None, None
 
 
+# ======================================================
+# 3️⃣ IMAGE PREPROCESSING
+# ======================================================
 def preprocess_image(image: Image.Image) -> np.ndarray:
     img = image.resize(IMAGE_SIZE)
     arr = np.array(img, dtype=np.float32) / 255.0
     return np.expand_dims(arr, axis=0)
 
 
+# ======================================================
+# 4️⃣ YOLO LEAF DETECTION
+# ======================================================
+def detect_leaf(image):
+    """
+    Returns True if YOLO detects a leaf, else False.
+    """
+    try:
+        results = leaf_detector.predict(image, conf=0.50)
+        boxes = results[0].boxes
+
+        if boxes is None or len(boxes) == 0:
+            return False
+        return True
+
+    except Exception as e:
+        print("YOLO detection error:", e)
+        return False
+
+
+# ======================================================
+# 5️⃣ DISEASE PREDICTION USING TFLITE
+# ======================================================
 def predict_disease(interpreter, input_array, idx_to_class):
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
+
     interpreter.set_tensor(input_details[0]["index"], input_array)
     interpreter.invoke()
+
     preds = interpreter.get_tensor(output_details[0]["index"])[0]
+
     idx = int(np.argmax(preds))
     return idx_to_class.get(idx, "Unknown"), float(preds[idx]) * 100
 
 
+# ======================================================
+# 6️⃣ OPENROUTER RECOMMENDATION
+# ======================================================
 async def get_openrouter_recommendation(disease_name: str) -> str:
-    """
-    Call OpenRouter API to get farmer-friendly treatment recommendation
-    """
-    prompt = SYSTEM_PROMPT + f"\n\nUser: Give simple treatment steps for {disease_name} in farmer-friendly language. Use bullet points and put each step on a new line."
-    
+    prompt = (
+        f"Give simple treatment steps for {disease_name} in farmer-friendly language. "
+        "Use bullet points and put each step on a new line."
+    )
+
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Content-Type": "application/json",
@@ -276,40 +317,59 @@ async def get_openrouter_recommendation(disease_name: str) -> str:
             return result["choices"][0]["message"]["content"].strip()
         else:
             return f"Could not generate recommendation (Error {response.status_code})"
+
     except Exception as e:
         return f"Could not generate recommendation: {str(e)}"
 
 
+# ======================================================
+# 7️⃣ FINAL API ENDPOINT
+# ======================================================
 @app.post("/predict-disease")
 async def predict_disease_api(file: UploadFile = File(...)):
     if interpreter is None:
-        raise HTTPException(status_code=500, detail="Model not loaded properly.")
+        raise HTTPException(status_code=500, detail="Disease model not loaded.")
+
+    if leaf_detector is None:
+        raise HTTPException(status_code=500, detail="Leaf detector model not loaded.")
+
     try:
         # Validate file type
-        content_type = getattr(file, 'content_type', '')
-        if not content_type or not content_type.startswith('image/'):
+        if not file.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="File must be an image")
-            
+
         contents = await file.read()
+
         try:
             image = Image.open(io.BytesIO(contents)).convert("RGB")
         except UnidentifiedImageError:
             raise HTTPException(status_code=400, detail="Invalid image file")
-            
-        # Process image and get prediction
+
+        # Step 1: Detect leaf using YOLO
+        leaf_present = detect_leaf(image)
+
+        if not leaf_present:
+            return {
+                "status": "error",
+                "leaf_detected": False,
+                "message": "No leaf detected. Upload a clear leaf image."
+            }
+
+        # Step 2: Disease prediction
         input_arr = preprocess_image(image)
         disease, conf = predict_disease(interpreter, input_arr, idx_to_class)
 
-        # Get recommendation from OpenRouter
+        # Step 3: Get recommendation
         recommendation = await get_openrouter_recommendation(disease)
 
         return {
+            "status": "success",
+            "leaf_detected": True,
             "predicted_disease": disease,
             "confidence": f"{conf:.2f}",
             "recommendation": recommendation
         }
-    except HTTPException:
-        raise
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
