@@ -5,12 +5,11 @@ pandas
 tensorflow
 Pillow
 google-generativeai
-wikipedia
 joblib
 scikit-learn
 python-multipart
 requests
 asyncio
-ultralytics
+
 
 
