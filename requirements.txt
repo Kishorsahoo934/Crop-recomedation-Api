@@ -10,4 +10,7 @@ joblib
 scikit-learn
 python-multipart
 requests
+asyncio
+ultralytics
+opencv-python-headless
 
