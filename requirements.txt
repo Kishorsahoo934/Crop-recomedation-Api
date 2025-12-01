@@ -12,5 +12,5 @@ python-multipart
 requests
 asyncio
 ultralytics
-opencv-python-headless
+
 
