@@ -14,7 +14,6 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import google.generativeai as genai
-import wikipedia
 import requests
 from ultralytics import YOLO 
 # ========== GLOBAL CONFIG ==========
