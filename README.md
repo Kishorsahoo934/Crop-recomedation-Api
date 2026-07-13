@@ -1,7 +1,6 @@
 # FarmSathi Backend (FastAPI)
 
 A production-ready FastAPI backend for agriculture assistance that powers:
-
 - Crop recommendation
 - Fertilizer recommendation
 - Plant disease detection (TFLite)
